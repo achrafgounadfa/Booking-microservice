@@ -1,0 +1,173 @@
+version: '3.8'
+
+services:
+  # API Gateway
+  api-gateway:
+    build: ./backend/microservices/api-gateway
+    container_name: api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - billetterie-network
+    depends_on:
+      - auth-service
+      - user-service
+      - event-service
+      - ticket-service
+      - payment-service
+      - notification-service
+
+  # Service d'authentification
+  auth-service:
+    build: ./backend/microservices/auth-service
+    container_name: auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - MONGODB_URI=mongodb+srv://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_CLUSTER}/auth-service?retryWrites=true&w=majority
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRATION=1d
+      - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
+      - REFRESH_TOKEN_EXPIRATION=7d
+    networks:
+      - billetterie-network
+    depends_on:
+      - rabbitmq
+
+  # Service utilisateur
+  user-service:
+    build: ./backend/microservices/user-service
+    container_name: user-service
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - MONGODB_URI=mongodb+srv://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_CLUSTER}/user-service?retryWrites=true&w=majority
+      - AUTH_SERVICE_URL=http://auth-service:3001
+    networks:
+      - billetterie-network
+    depends_on:
+      - auth-service
+      - rabbitmq
+
+  # Service événement
+  event-service:
+    build: ./backend/microservices/event-service
+    container_name: event-service
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - MONGODB_URI=mongodb+srv://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_CLUSTER}/event-service?retryWrites=true&w=majority
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - RABBITMQ_QUEUE=event_queue
+    networks:
+      - billetterie-network
+    depends_on:
+      - rabbitmq
+
+  # Service ticket
+  ticket-service:
+    build: ./backend/microservices/ticket-service
+    container_name: ticket-service
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=production
+      - PORT=3004
+      - MONGODB_URI=mongodb+srv://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_CLUSTER}/ticket-service?retryWrites=true&w=majority
+      - EVENT_SERVICE_URL=http://event-service:3003
+      - USER_SERVICE_URL=http://user-service:3002
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - RABBITMQ_QUEUE=ticket_queue
+    networks:
+      - billetterie-network
+    depends_on:
+      - event-service
+      - user-service
+      - rabbitmq
+
+  # Service paiement
+  payment-service:
+    build: ./backend/microservices/payment-service
+    container_name: payment-service
+    ports:
+      - "3005:3005"
+    environment:
+      - NODE_ENV=production
+      - PORT=3005
+      - MONGODB_URI=mongodb+srv://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_CLUSTER}/payment-service?retryWrites=true&w=majority
+      - TICKET_SERVICE_URL=http://ticket-service:3004
+      - USER_SERVICE_URL=http://user-service:3002
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - RABBITMQ_QUEUE=payment_queue
+      - PAYMENT_BACKUP_INTERVAL=86400000
+    networks:
+      - billetterie-network
+    depends_on:
+      - ticket-service
+      - rabbitmq
+
+  # Service notification
+  notification-service:
+    build: ./backend/microservices/notification-service
+    container_name: notification-service
+    ports:
+      - "3006:3006"
+    environment:
+      - NODE_ENV=production
+      - PORT=3006
+      - MONGODB_URI=mongodb+srv://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_CLUSTER}/notification-service?retryWrites=true&w=majority
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - RABBITMQ_QUEUE=notification_queue
+      - EMAIL_SERVICE=smtp
+      - EMAIL_HOST=smtp.example.com
+      - EMAIL_PORT=587
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+    networks:
+      - billetterie-network
+    depends_on:
+      - rabbitmq
+
+  # Frontend
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "80:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://api-gateway:3000
+    networks:
+      - billetterie-network
+    depends_on:
+      - api-gateway
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+    networks:
+      - billetterie-network
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+networks:
+  billetterie-network:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
