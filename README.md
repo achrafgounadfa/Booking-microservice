@@ -56,7 +56,7 @@ Une présentation détaillée du projet est disponible dans le dossier `/present
 
 ## Auteurs
 
-Développé par l'équipe de projet en Mars 2025.
+Développé par Achraf GOUNADFA en Mars 2025.
 
 ## Licence
 
